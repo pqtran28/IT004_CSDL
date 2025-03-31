@@ -119,6 +119,7 @@ ALTER TABLE HOCVIEN ADD CONSTRAINT CK_MAHV CHECK(MAHV LIKE '[A-Z][0-9][0-9][0-9]
 ALTER TABLE HOCVIEN ADD CONSTRAINT CK_GIOITINH CHECK (GIOITINH IN ('Nam','Nu'));
 -- CAU 4:
 ALTER TABLE KETQUATHI ADD CONSTRAINT CK_DIEMTHI CHECK(DIEM >= 0 AND DIEM <= 10); -- (????)
+
 --PHAN 2:
 --CAU 1:
 UPDATE GIAOVIEN
@@ -141,9 +142,7 @@ SET XEPLOAI = CASE
 	WHEN DIEMTB < 6.5 AND DIEMTB >= 5 THEN 'TB'
 	ELSE 'Y'
 END;
-
 --PHAN 3:
---BUOI2:
 --CAU 1:
 SELECT MAHV, HO, TEN, NGSINH, MALOP
 FROM HOCVIEN
@@ -192,11 +191,370 @@ WHERE MAGV IN (SELECT MAGV FROM GIAOVIEN WHERE HOTEN = 'Nguyen To Lan ')AND MAMH
 --CAU 9:
 SELECT MAMH, TENMH
 FROM MONHOC
-WHERE MAMH IN (SELECT MAMH_TRUOC FROM DIEUKIEN WHERE MAMH = 'Co So Du Lieu')
+WHERE MAMH IN (SELECT MAMH_TRUOC FROM DIEUKIEN WHERE MAMH = 'CSDL')
 --CAU 10:
 SELECT MAMH, TENMH
 FROM MONHOC
-WHERE MAMH IN (SELECT MAMH FROM DIEUKIEN WHERE MAMH_TRUOC = 'Cau Truc Roi Rac')
+WHERE MAMH IN (SELECT MAMH FROM DIEUKIEN WHERE MAMH_TRUOC = 'CTRR')
+--CAU 11:
+SELECT GIAOVIEN.MAGV, HOTEN
+FROM GIAOVIEN
+INNER JOIN GIANGDAY ON GIANGDAY.MAGV = GIAOVIEN.MAGV
+WHERE HOCKY = 1 AND NAM = 2006 AND MALOP = 'K11' AND MAMH = 'CTRR'
+INTERSECT
+SELECT GIAOVIEN.MAGV, HOTEN
+FROM GIAOVIEN
+INNER JOIN GIANGDAY ON GIANGDAY.MAGV = GIAOVIEN.MAGV
+WHERE HOCKY = 1 AND NAM = 2006 AND MALOP = 'K12' AND MAMH = 'CTRR'
+--CAU 12:Tìm những học viên (mã học viên, họ tên) thi 
+--không đạt môn CSDL ở lần thi thứ 1 nhưng 
+--chưa thi lại môn này
+SELECT MAHV
+FROM KETQUATHI
+WHERE MAMH = 'CTRR' AND LANTHI = 1 AND KQUA = 'Khong Dat' AND MAHV NOT IN (SELECT MAHV FROM KETQUATHI WHERE MAMH = 'CTRR' AND LANTHI > 1)
+--CAU 13:Tìm giáo viên (mã giáo viên, họ tên) 
+--không được phân công giảng dạy bất kỳ môn học nào.
+SELECT MAGV
+FROM GIAOVIEN
+WHERE MAGV NOT IN (SELECT MAGV FROM GIANGDAY)
+--CAU 14: Tìm giáo viên (mã giáo viên, họ tên) không được phân công 
+--giảng dạy bất kỳ môn học nào thuộc khoa giáo viên đó phụ trách
+--=> GV CHỈ DẠY NHƯNG MH KO CÓ TRONG KHOA MÌNH HOẶC GIÁO VIÊN CHƯA ĐƯỢC PHÂN CÔNG DẠY MÔN NÀO
+SELECT GV.MAGV, HOTEN
+FROM GIAOVIEN GV
+WHERE MAGV NOT IN (SELECT MAGV FROM GIANGDAY) OR MAGV IN (SELECT MAGV FROM GIANGDAY WHERE MAMH NOT IN (SELECT MAMH FROM MONHOC WHERE MONHOC.MAKHOA != GV.MAKHOA))
+--CAU 15:Tìm họ tên các học viên thuộc 
+--lớp “K11” thi một môn bất kỳ quá 3 lần vẫn “Khong dat”
+--hoặc thi lần thứ 2 môn CTRR được 5 điểm
+SELECT MAHV, HO, TEN
+FROM HOCVIEN
+WHERE MALOP = 'K11' AND (MAHV IN (SELECT MAHV FROM KETQUATHI WHERE KQUA = 'Khong Dat' GROUP BY MAHV, MAMH HAVING COUNT(*) >= 3) OR MAHV IN (SELECT MAHV
+FROM KETQUATHI
+WHERE MAMH = 'CTRR' AND DIEM = 5))
+
+
+--HỌC VIÊN THI 1 MÔN BẤT KỲ QUÁ 3 LẦN VẪN KO ĐẠT:
+SELECT MAHV, MAMH, COUNT(*)
+FROM KETQUATHI
+WHERE KQUA = 'Khong Dat'
+GROUP BY MAHV, MAMH
+HAVING COUNT(*) >= 3
+--HỌC VIÊN THI CTRR ĐƯỢC 5Đ
+SELECT MAHV
+FROM KETQUATHI
+WHERE MAMH = 'CTRR' AND DIEM = 5
+
+
+--CAU 16:Tìm họ tên giáo viên dạy môn CTRR cho ít nhất
+--hai lớp trong cùng một học kỳ của một năm học.
+SELECT HOTEN
+FROM GIAOVIEN
+INNER JOIN (SELECT MAGV
+FROM GIANGDAY
+WHERE MAMH = 'CTRR'
+GROUP BY MAGV, NAM, HOCKY
+HAVING COUNT(MALOP) >= 2) AS BANGPC ON BANGPC.MAGV = GIAOVIEN.MAGV
+
+--CAU 17:Danh sách học viên và điểm thi môn CSDL 
+--(chỉ lấy điểm của lần thi sau cùng)
+SELECT MAHV, DIEM
+FROM KETQUATHI K1
+WHERE MAMH = 'CSDL' AND LANTHI = (SELECT MAX(LANTHI) FROM KETQUATHI K2 WHERE MAMH = 'CSDL' AND K1.MAHV = K2.MAHV)
+
+
+--CAU 18:Danh sách học viên và điểm thi môn 
+--“Co So Du Lieu” (chỉ lấy điểm cao nhất của các lần thi).
+SELECT MAHV, DIEM
+FROM KETQUATHI K1
+WHERE MAMH = 'CSDL' AND DIEM = (SELECT MAX(DIEM) FROM KETQUATHI K2 WHERE MAMH = 'CSDL' AND K1.MAHV = K2.MAHV)
+ORDER BY MAHV
+
+--CAU 19:Khoa nào (mã khoa, tên khoa) được thành lập sớm nhất.
+SELECT K1.MAKHOA, K1.TENKHOA
+FROM KHOA K1
+WHERE K1.NGTLAP <= ALL(SELECT NGTLAP FROM KHOA K2)
+
+--CAU 20: Có bao nhiêu giáo viên có học hàm là “GS” hoặc “PGS”.
+SELECT COUNT(*)
+FROM GIAOVIEN
+WHERE HOCHAM = 'GS' OR HOCHAM = 'PGS'
+
+--CAU 21:Thống kê có bao nhiêu giáo viên có học vị là “CN”, “KS”, “Ths”, “TS”, “PTS” trong mỗi 
+--khoa.
+
+SELECT TENKHOA, HOCVI, COUNT(MAGV)
+FROM GIAOVIEN
+INNER JOIN KHOA ON KHOA.MAKHOA = GIAOVIEN.MAKHOA
+WHERE HOCVI = 'CN' OR HOCVI = 'KS' OR HOCVI = 'Ths' OR HOCVI = 'TS' OR HOCVI = 'PTS'
+GROUP BY TENKHOA, HOCVI
+ORDER BY TENKHOA
+
+--CAU 22: Mỗi môn học thống kê 
+--số lượng học viên theo kết quả (đạt và không đạt)
+SELECT K1.TENMH, DAT, KHONGDAT
+FROM
+(SELECT TENMH, COUNT(MAHV) AS DAT
+FROM KETQUATHI JOIN MONHOC ON MONHOC.MAMH = KETQUATHI.MAMH
+WHERE KQUA = 'Dat'
+GROUP BY TENMH) K1
+INNER JOIN (SELECT TENMH, COUNT(MAHV) AS KHONGDAT
+FROM KETQUATHI JOIN MONHOC ON MONHOC.MAMH = KETQUATHI.MAMH
+WHERE KQUA = 'Khong Dat'
+GROUP BY TENMH) K2 ON K1.TENMH = K2.TENMH
+
+--CAU 23:Tìm giáo viên (mã giáo viên, họ tên) là giáo viên 
+--chủ nhiệm của một lớp, đồng thời dạy cho 
+--lớp đó ít nhất một môn học.
+SELECT MAGVCN, HOTEN
+FROM LOP L1
+JOIN GIAOVIEN ON GIAOVIEN.MAGV = L1.MAGVCN
+WHERE MAGVCN IN (SELECT MAGV FROM GIANGDAY WHERE L1.MALOP = GIANGDAY.MALOP)
+
+--CAU 24:Tìm họ tên lớp trưởng của lớp có sỉ số cao nhất
+SELECT HO, TEN
+FROM LOP JOIN HOCVIEN ON HOCVIEN.MAHV = LOP.TRGLOP
+WHERE SISO >= ALL(SELECT SISO FROM LOP)
+
+--CAU 25:* Tìm họ tên những LOPTRG thi không đạt quá 3 môn 
+	--(mỗi môn đều thi không đạt ở tất cả các lần thi).
+
+	---MÃ HV THI KO ĐẠT:
+SELECT MAHV, MAMH
+FROM KETQUATHI K1
+WHERE LANTHI IN (SELECT MAX(LANTHI) FROM KETQUATHI K2 
+					WHERE K1.MAHV = K2.MAHV AND K1.MAMH = K2.MAMH)
+					AND KQUA = 'Khong Dat'
+	--MÃ HV THI KO ĐẠT > 3 MÔN:
+SELECT MAHV, COUNT(*) AS SOMON_KODAT
+FROM (SELECT MAHV, MAMH
+FROM KETQUATHI K1
+WHERE LANTHI IN (SELECT MAX(LANTHI) FROM KETQUATHI K2 
+					WHERE K1.MAHV = K2.MAHV AND K1.MAMH = K2.MAMH)
+					AND KQUA = 'Khong Dat') K3
+GROUP BY MAHV
+HAVING COUNT(*) > 3
+
+	--MÃ, TÊN LỚP TRƯỞNG THI KO ĐẠT >= 3 MÔN
+SELECT TRGLOP, HO, TEN
+FROM LOP JOIN HOCVIEN ON HOCVIEN.MAHV = LOP.TRGLOP
+WHERE TRGLOP IN (SELECT MAHV
+FROM (SELECT MAHV, MAMH
+FROM KETQUATHI K1
+WHERE LANTHI IN (SELECT MAX(LANTHI) FROM KETQUATHI K2 
+					WHERE K1.MAHV = K2.MAHV AND K1.MAMH = K2.MAMH)
+					AND KQUA = 'Khong Dat')K3)
+--26. Tìm học viên (mã học viên, họ tên) 
+--có số môn đạt điểm 9,10 nhiều nhất
+
+SELECT MAHV,HO,TEN,SOMON 
+FROM (SELECT KETQUATHI.MAHV, HO, TEN, COUNT(DISTINCT MAMH) AS SOMON
+FROM KETQUATHI JOIN HOCVIEN ON HOCVIEN.MAHV = KETQUATHI.MAHV
+WHERE DIEM BETWEEN 9 AND 10
+GROUP BY KETQUATHI.MAHV, HO, TEN) K1
+WHERE K1.SOMON >= ALL(SELECT COUNT(DISTINCT MAMH) AS SOMON
+FROM KETQUATHI JOIN HOCVIEN ON HOCVIEN.MAHV = KETQUATHI.MAHV
+WHERE DIEM BETWEEN 9 AND 10
+GROUP BY KETQUATHI.MAHV, HO, TEN)
+
+--27. Trong từng lớp, tìm học viên 
+--(mã học viên, họ tên) có số môn đạt điểm 9,10 nhiều nhất.
+--SQL yêu cầu tất cả các cột xuất hiện trong ORDER BY phải được nhóm lại trong 
+--GROUP BY, trừ khi bạn áp dụng một hàm tổng hợp cho chúng.
+
+WITH XEPHANG AS (SELECT MALOP, KETQUATHI.MAHV, HO, TEN, COUNT(DISTINCT MAMH) AS SOMON,
+	RANK() OVER (PARTITION BY MALOP ORDER BY COUNT(DISTINCT MAMH)) AS RankNum
+FROM KETQUATHI JOIN HOCVIEN ON HOCVIEN.MAHV = KETQUATHI.MAHV
+WHERE DIEM BETWEEN 9 AND 10
+GROUP BY HOCVIEN.MALOP, KETQUATHI.MAHV, HO, TEN)
+
+SELECT LOP.MALOP, MAHV, HO, TEN, SOMON
+FROM XEPHANG RIGHT JOIN LOP ON LOP.MALOP = XEPHANG.MALOP
+WHERE RankNum = 1
+
+--CAU 28: Trong từng học kỳ của từng năm, 
+--mỗi giáo viên phân công dạy bao nhiêu môn học, bao nhiêu lớp
+
+SELECT NAM, HOCKY, MAGV, COUNT( DISTINCT MALOP) AS SOLOP, COUNT(DISTINCT  MAMH) AS SOMON_GD
+FROM GIANGDAY
+GROUP BY NAM, HOCKY, MAGV
+
+--CAU 29:Trong từng học kỳ của từng năm, tìm giáo viên 
+--(mã giáo viên, họ tên) giảng dạy nhiều nhất.
+
+WITH XEPHANG_GV AS
+(SELECT NAM, HOCKY, MAGV, COUNT( DISTINCT MALOP) AS SOLOP,
+		RANK() OVER (PARTITION BY NAM, HOCKY ORDER BY COUNT( DISTINCT MALOP) DESC) AS RankNumGV
+FROM GIANGDAY
+GROUP BY NAM, HOCKY, MAGV)
+
+SELECT NAM, HOCKY, XEPHANG_GV.MAGV, HOTEN, SOLOP
+FROM XEPHANG_GV JOIN GIAOVIEN ON GIAOVIEN.MAGV = XEPHANG_GV.MAGV
+WHERE RankNumGV = 1
+
+--cau 30:Tìm môn học (mã môn học, tên môn học) có 
+--nhiều học viên thi không đạt (ở lần thi thứ 1) nhất.
+--=> đếm số lần học viên thi ko đạt ở lần thi 1, group by mamh
+
+SELECT B1.MAMH, TENMH, SOHV_KD_L1
+FROM (SELECT MAMH, COUNT(*) AS SOHV_KD_L1
+FROM KETQUATHI
+WHERE LANTHI = 1 AND KQUA = 'Khong Dat'
+GROUP BY MAMH) B1
+JOIN MONHOC ON MONHOC.MAMH = B1.MAMH
+WHERE SOHV_KD_L1 >= ALL(SELECT COUNT(*) AS SOHV_KD_L1
+FROM KETQUATHI
+WHERE LANTHI = 1 AND KQUA = 'Khong Dat'
+GROUP BY MAMH)
+
+--cau 31:Tìm học viên (mã học viên, họ tên) 
+--thi môn nào cũng đạt (chỉ xét lần thi thứ 1).
+
+--các môn mà các hv đã thi
+select mahv, count(distinct mamh)
+from ketquathi
+group by mahv
+
+--các hv thi đạt ở lần đầu tiên
+select mahv
+from ketquathi
+where lanthi = 1 and kqua = 'Dat'
+group by mahv 
+
+--hv thi môn nào cũng đạt ở lần đầu
+SELECT k1.MAHV, ho, ten
+FROM KETQUATHI k1 join hocvien on hocvien.mahv = k1.mahv
+WHERE LANTHI = 1 AND KQUA = 'Dat'
+GROUP BY k1.MAHV, ho, ten
+HAVING COUNT(DISTINCT MAMH) = (select count(distinct mamh)
+from ketquathi k2
+where k1.mahv = k2.mahv
+group by k2.mahv)
+
+--cau 32: * Tìm học viên (mã học viên, họ tên) 
+--thi môn nào cũng đạt (chỉ xét lần thi sau cùng)
+
+--mã hv thi môn sau cùng đạt
+select k1.mahv, ho, ten
+from ketquathi k1 join hocvien on hocvien.mahv = k1.mahv
+where lanthi = (select max(lanthi) 
+	from ketquathi k2 where k2.mahv = k1.mahv and k1.mamh = k2.mamh) 
+and kqua = 'Dat'
+group by k1.mahv, ho, ten 
+having count(distinct mamh) = (select count(distinct mamh)
+from ketquathi k3
+where k3.mahv = k1.mahv
+group by k3.mahv)
+
+select * from ketquathi
+
+--cau 33: * Tìm học viên (mã học viên, họ tên) 
+--đã thi tất cả các môn đều đạt (chỉ xét lần thi thứ 1).
+
+--tất cả các môn:
+select count(*)
+from monhoc
+
+--học viên (mã học viên, họ tên) 
+--đã thi tất cả các môn đều đạt (chỉ xét lần thi thứ 1)
+select k1.mahv, ho, ten
+from ketquathi k1 join hocvien on hocvien.mahv = k1.mahv
+where lanthi = 1 and kqua = 'Dat'
+group by k1.mahv, ho, ten 
+having count(distinct mamh) = (select count(*) from monhoc)
+
+--cau 34: * Tìm học viên (mã học viên, họ tên) đã thi 
+--tất cả các môn đều đạt (chỉ xét lần thi sau cùng).
+select k1.mahv, ho, ten
+from ketquathi k1 join hocvien on hocvien.mahv = k1.mahv
+where lanthi = (select max(lanthi) 
+	from ketquathi k2 where k2.mahv = k1.mahv and k1.mamh = k2.mamh) 
+and kqua = 'Dat'
+group by k1.mahv, ho, ten 
+having count(distinct mamh) = (select count(*) from monhoc)
+
+--cau 35:** Tìm học viên (mã học viên, họ tên) 
+--có điểm thi cao nhất trong từng môn (lấy điểm ở lần 
+--thi sau cùng).
+--> kiểu: mamh	 mahv	diem
+--điểm cuối của các hv:
+select mamh, mahv, diem,
+from ketquathi k1
+where lanthi = (select max(lanthi) from ketquathi k2
+					where k1.mahv = k2.mahv and k1.mamh = k2.mamh)
+
+--học viên (mã học viên, họ tên) 
+--có điểm thi cao nhất trong từng môn (lấy điểm ở lần 
+--thi sau cùng).
+with xephangDiem as (select mamh, mahv, diem,
+	rank() over (partition by mamh order by diem desc) as rank_score 
+from ketquathi k1
+where lanthi = (select max(lanthi) from ketquathi k2
+					where k1.mahv = k2.mahv and k1.mamh = k2.mamh))
+select mamh, xephangDiem.mahv, ho, ten, diem
+from xephangDiem join hocvien on hocvien.mahv = xephangDiem.mahv
+where rank_score = 1
+
+--RÀNG BUỘC TV
+
+--tạo rule thuộc tính GIOITINH chỉ có giá trị 'Nam' hoặc 'Nữ'
+CREATE RULE GT AS @GT IN ('Nam', 'Nu')
+--gán rule cho 2 thuộc tính GIOITINH của QHE HOCVIEN & GIAOVIEN
+sp_bindrule GT, 'HOCVIEN.GIOITINH'
+sp_bindrule GT, 'GIAOVIEN.GIOITINH'
+--bỏ rule
+sp_unbindrule 'HOCVIEN.GIOITINH'
+
+
+CREATE TABLE GV(
+	MAGV VARCHAR(4) PRIMARY KEY,
+	HOTEN VARCHAR(20),
+	HESO NUMERIC(4,3),
+	LUONG MONEY)
+-- RB LIÊN BỘ CÓ BỐI CẢNH 1 QHE: KHI THAO TÁC VỚI THUỘC TÍNH LƯƠNG THÌ LƯƠNG > LƯƠNG CŨ
+--VIẾT TRIGGER
+--R1 | THEM | XOA | SUA
+--GV |  -   |  -  |  + 
+
+CREATE TRIGGER R1 ON GV FOR UPDATE AS
+IF UPDATE(LUONG)
+	BEGIN
+	DECLARE @i int
+	select @i = (select count(*) from inserted, deleted where inserted.magv = deleted.magv
+							and inserted.luong <= deleted.luong)
+	if @i > 0
+		begin
+		print 'Vi pham RBTV'
+		rollback tran
+		end
+	end
+go
+
+insert into GV(magv,luong) values ('gv01',3400)
+update gv set luong = 2300 where magv = 'gv01' -- bao loi
+update gv set luong = 4000 where magv = 'gv01' -- ko loi
+
+select * from gv
+
+--r2: cung he so thi cung luong
+--R2 | THEM | XOA | SUA
+--GV |  +   |  -  |  +(heso, luong)
+
+
+create trigger r2 on gv for insert, update as
+	declare @i int
+	select @i = (select count(*) from gv, inserted where gv.heso = inserted.heso and gv.luong <> inserted.luong)
+	if @i > 0
+	begin
+		raiserror('cung he so thi cung luong', 16,1)
+		rollback tran 
+	end
+go
+
+update gv set heso = 2 where magv = 'gv01'
+update gv set luong = 30000 where magv = 'gv01'
+insert into gv values('gv02','tran a', 2, 30000)
+update gv set luong = 45000 where magv = 'gv01' -- bao loi r2 => muon thay doi luong phai update heso
+update gv set heso = 3 where magv = 'gv01'
 
 
 
@@ -209,7 +567,23 @@ WHERE MAMH IN (SELECT MAMH FROM DIEUKIEN WHERE MAMH_TRUOC = 'Cau Truc Roi Rac')
 
 
 
--- ĐÃ NHẬP DL
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	-- ĐÃ NHẬP DL
 Set dateformat dmy;
 ALTER TABLE KHOA ALTER COLUMN TENKHOA NVARCHAR(200)
 insert into KHOA(MAKHOA, TENKHOA, NGTLAP, TRGKHOA) values('KHMT','Khoa hoc may tinh','7/6/2005',Null)
@@ -221,7 +595,6 @@ insert into KHOA values('KTMT','Ky thuat may tinh','12/20/2005',Null)
 UPDATE KHOA
 SET NGTLAP = '6/7/2005'
 WHERE NGTLAP = '7/6/2005'
-
 
 insert into MONHOC values('THDC','Tin hoc dai cuong',4,1,'KHMT')
 insert into MONHOC values('CTRR','Cau truc roi rac',5,0,'KHMT')
@@ -265,6 +638,7 @@ insert into GIAOVIEN values('GV15','Le Ha Thanh','ThS','GV','Nam','4/5/1978','15
 insert into LOP values('K11','Lop 1 khoa 1',Null,11,'GV07')
 insert into LOP values('K12','Lop 2 khoa 1',Null,12,'GV09')
 insert into LOP values('K13','Lop 3 khoa 1',Null,12,'GV14')
+
 
 insert into HOCVIEN values('K1101','Nguyen Van','A','27/1/1986','Nam','TpHCM','K11', NULL, NULL, NULL)
 --GHICHU VARCHAR(100)
@@ -311,6 +685,24 @@ insert into HOCVIEN values('K1312','Nguyen Thi Kim','Yen','7/9/1986','Nu','TpHCM
 ALTER TABLE HOCVIEN ADD GHICHU VARCHAR(100)
 ALTER TABLE HOCVIEN ADD DIEMTB FLOAT
 ALTER TABLE HOCVIEN ADD XEPLOAI VARCHAR(10)
+
+Set dateformat dmy;
+insert into GIANGDAY values('K11','THDC','GV07',1,2006,'2/1/2006','12/5/2006')
+insert into GIANGDAY values('K12','THDC','GV06',1,2006,'2/1/2006','12/5/2006')
+insert into GIANGDAY values('K13','THDC','GV15',1,2006,'2/1/2006','12/5/2006')
+insert into GIANGDAY values('K11','CTRR','GV02',1,2006,'9/1/2006','17/5/2006')
+insert into GIANGDAY values('K12','CTRR','GV02',1,2006,'9/1/2006','17/5/2006')
+insert into GIANGDAY values('K13','CTRR','GV08',1,2006,'9/1/2006','17/5/2006')
+insert into GIANGDAY values('K11','CSDL','GV05',2,2006,'1/6/2006','15/7/2006')
+insert into GIANGDAY values('K12','CSDL','GV09',2,2006,'1/6/2006','15/7/2006')
+insert into GIANGDAY values('K13','CTDLGT','GV15',2,2006,'1/6/2006','15/7/2006')
+insert into GIANGDAY values('K13','CSDL','GV05',3,2006,'1/8/2006','15/12/2006')
+insert into GIANGDAY values('K13','DHMT','GV07',3,2006,'1/8/2006','15/12/2006')
+insert into GIANGDAY values('K11','CTDLGT','GV15',3,2006,'1/8/2006','15/12/2006')
+insert into GIANGDAY values('K12','CTDLGT','GV15',3,2006,'1/8/2006','15/12/2006')
+insert into GIANGDAY values('K11','HDH','GV04',1,2007,'2/1/2007','18/2/2007')
+insert into GIANGDAY values('K12','HDH','GV04',1,2007,'2/1/2007','20/3/2007')
+insert into GIANGDAY values('K11','DHMT','GV07',1,2007,'18/2/2007','20/3/2007')
 
 insert into KETQUATHI values('K1101','CSDL',1,'20/7/2006',10,'Dat')
 insert into KETQUATHI values('K1101','CTDLGT',1,'28/12/2006',9,'Dat')
@@ -387,4 +779,3 @@ update KHOA set TRGKHOA='GV04' where MAKHOA='CNPM'
 update LOP set TRGLOP='K1108' where MALOP='K11'
 update LOP set TRGLOP='K1205' where MALOP='K12'
 update LOP set TRGLOP='K1305' where MALOP='K13'
-
